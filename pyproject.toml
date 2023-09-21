@@ -1,0 +1,23 @@
+#
+# Only used for rye, not meant to be published on PyPI.
+# https://rye-up.com/
+#
+[project]
+name = "git-issues-rss"
+version = "0.1.0"
+classifiers = [
+    # This classifier prevents the package uploading to the PyPI.
+    # As this project is not a Python library, it
+    # makes no sense to upload a documentation to PyPI.
+    "Private :: Do Not Upload"
+]
+dependencies = [
+    "httpx~=0.25.0",
+    "orjson~=3.9.7"
+]
+requires-python = ">=3.9,<3.10"
+
+[tool.rye]
+dev-dependencies = [
+    "ruff~=0.0.290"
+]
