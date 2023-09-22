@@ -1,6 +1,14 @@
 # git-issues-rss
 
-A very-basic Atom feed (RSS-like web feed format) generator/API for tracking new issues and comments in a given hosted Git repository, which can be pretty useful for seeing what's happening recently in your favorite project. Coded in Python and hosted on Vercel.
+An [Atom XML feed](https://wikipedia.org/wiki/Atom_(web_standard)) API for tracking new issues and comments in a given hosted git repository, which can be pretty useful for seeing what's happening recently in your favorite project.
+
+The generated feed aims to follow [RFC 4287](https://datatracker.ietf.org/doc/html/rfc4287). It is generated on-the-fly without use of databases and queries issues and comments in bulk. Feed entries represent an issue or a comment, comments will have the same title with issues that the comment posted in, but only if issue itself is seen in the feed, which means the generator will avoid sending a HTTP request just for reading a single issue.
+
+It supports public GitHub repositories and public repositories in Gitea/Forgejo instances. See below for usage.
+
+Note that the feed doesn't limit the queried issues and comments (it just lists what the API returns, but it might be changed in the future), so this might cause unwanted behavior in more active repositories, and the feed doesn't support pagination at the moment.
+
+Written in Python and can be hosted easily on Vercel with the button down below.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fysfchn%2Fgit-issues-rss)
 
@@ -17,12 +25,12 @@ Query parameters:
 * `host_type` (**Required**)
     * One of these constants: `github`, `forgejo` or `gitea` to specify where the repository is hosted. This value determines the defaults of `git_host`, `api_host`, `api_comments` and `api_issues` parameters.
 * `since`
-    * Timestamp in ISO format (like `2023-09-20T07:11:00+00:00`) to filter created issues and comments after given date. If not given, issues and comments will be listed 2 days ago from the time of the feed has requested. To refer the plus sign (`+`) use it in the encoded form `%2B`, as plus signs are normally used for space (` `) characters in URLs. 
+    * Timestamp in ISO format (like `2023-09-20T07:11:00+00:00`) to filter created issues and comments after given date. If not given, feed will be limited to 2 days ago from the time of the feed has requested. To refer the plus sign (`+`) use it in the encoded form `%2B`, as plus signs are normally used for space (` `) characters in URLs.
 
 Advanced:
 
 * `pretty`
-    Set it to any value to display a pretty (newlines, indentations) XML output. Not including this parameter will display a minified XML (the default), which results in a smaller feed file.
+    * Set it to any value to display a XML output with newlines and indentations. Not including this parameter will display a minified XML (the default), which results in a smaller feed file and thus less bandwidth usage.
 * `git_host`
     * Hostname of the related git hosting service. The value is determined by `host_type`, but can be overriden by setting this parameter. If not specified, the default values are:
         * If `host_type` is `github`, the default will be set to: `github.com`.
