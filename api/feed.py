@@ -52,7 +52,7 @@ def get_datetime_now():
     return datetime.now(timezone.utc).astimezone()
 
 def datetime_to_iso(date : datetime):
-    return quote(date.isoformat(timespec = "seconds"), safe = ":")
+    return date.isoformat(timespec = "seconds")
 
 def iso_to_datetime(iso : str):
     if iso.endswith("Z"):
@@ -266,7 +266,7 @@ class handler(BaseHTTPRequestHandler):
         if "api_issues" in params:
             host_type["api_issues"] = params["api_issues"][0]
         if "since" in params:
-            since_time = datetime.fromisoformat(unquote(params["since"][0]))
+            since_time = datetime.fromisoformat(params["since"][0])
         try:
             atom = get_updates_atom(
                 repo = params["repo"][0],
