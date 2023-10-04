@@ -4,13 +4,11 @@ An [Atom XML feed](https://wikipedia.org/wiki/Atom_(web_standard)) API for track
 
 The generated feed aims to be compatible with [RFC 4287](https://datatracker.ietf.org/doc/html/rfc4287) and with [RFC 5005](https://datatracker.ietf.org/doc/html/rfc5005) for pagination of the feed. It is generated on-the-fly without use of databases and it queries issues and comments in bulk. Feed entries represent an issue or a comment, comments will have the same title with issues that the comment posted in, but only if issue itself is seen in the feed, which means the generator will avoid sending a HTTP request just for reading a single issue.
 
-It supports public GitHub repositories and public repositories in Gitea/Forgejo instances. See below for usage.
-
-Note that the feed doesn't limit the queried issues and comments (it just lists what the API returns, but it might be changed in the future), so this might cause unwanted behavior in more active repositories, and the feed doesn't support pagination at the moment.
-
-Written in Python and can be hosted easily on Vercel with the button down below.
+Written in Python and can be hosted in few clicks on Vercel with the button down below.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fysfchn%2Fgit-issues-rss)
+
+It supports public GitHub repositories and public repositories in Gitea/Forgejo instances. See below for usage.
 
 ## Usage
 
@@ -18,9 +16,9 @@ Written in Python and can be hosted easily on Vercel with the button down below.
 https://<DEPLOY-URL>/api/feed
 ```
 
-> Make sure to encode characters query parameters properly before making an request.
+> Make sure to encode characters in query parameters properly before making an request.
 
-Query parameters:
+Basic:
 
 * `repo` (**Required**)
     * Repository name in `account/repo` format which the slash (`/`) is encoded as `%2F`, such as `?repo=microsoft%2Fvscode`.
@@ -28,15 +26,15 @@ Query parameters:
     * One of these constants: `github`, `forgejo` or `gitea` to specify where the repository is hosted. This value determines the defaults of `git_host`, `api_host`, `api_comments` and `api_issues` parameters.
 * `since`
     * Timestamp in ISO format (like `2023-09-20T07:11:00+00:00`) to filter created issues and comments after given date. If not given, feed will be limited to 2 days ago from the time of the feed has requested. To refer the plus sign (`+`) use it in the encoded form `%2B`, as plus signs are normally used for space (` `) characters in URLs.
+* `limit`
+    Maximum entries that is shown on the feed per page. Default is 50.
+* `page`
+    Number of the page to fetch issues and comments. First page contains the latest updates. Default is 1.
 
 Advanced:
 
 * `pretty`
     * Set it to any value to display a XML output with newlines and indentations. Not including this parameter will display a minified XML (the default), which results in a smaller feed file and thus less bandwidth usage.
-* `limit`
-    Maximum entries that is shown on the feed per page. Default is 50.
-* `page`
-    Number of the page to fetch issues and comments. First page contains the latest updates. Default is 1.
 * `git_host`
     * Hostname of the related git hosting service. The value is determined by `host_type`, but can be overriden by setting this parameter. If not specified, the default values are:
         * If `host_type` is `github`, the default will be set to: `github.com`.
