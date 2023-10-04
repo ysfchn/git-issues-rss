@@ -2,7 +2,7 @@
 
 An [Atom XML feed](https://wikipedia.org/wiki/Atom_(web_standard)) API for tracking new issues and comments in a given hosted git repository, which can be pretty useful for seeing what's happening recently in your favorite project.
 
-The generated feed aims to follow [RFC 4287](https://datatracker.ietf.org/doc/html/rfc4287). It is generated on-the-fly without use of databases and queries issues and comments in bulk. Feed entries represent an issue or a comment, comments will have the same title with issues that the comment posted in, but only if issue itself is seen in the feed, which means the generator will avoid sending a HTTP request just for reading a single issue.
+The generated feed aims to be compatible with [RFC 4287](https://datatracker.ietf.org/doc/html/rfc4287) and with [RFC 5005](https://datatracker.ietf.org/doc/html/rfc5005) for pagination of the feed. It is generated on-the-fly without use of databases and it queries issues and comments in bulk. Feed entries represent an issue or a comment, comments will have the same title with issues that the comment posted in, but only if issue itself is seen in the feed, which means the generator will avoid sending a HTTP request just for reading a single issue.
 
 It supports public GitHub repositories and public repositories in Gitea/Forgejo instances. See below for usage.
 
@@ -18,6 +18,8 @@ Written in Python and can be hosted easily on Vercel with the button down below.
 https://<DEPLOY-URL>/api/feed
 ```
 
+> Make sure to encode characters query parameters properly before making an request.
+
 Query parameters:
 
 * `repo` (**Required**)
@@ -31,6 +33,10 @@ Advanced:
 
 * `pretty`
     * Set it to any value to display a XML output with newlines and indentations. Not including this parameter will display a minified XML (the default), which results in a smaller feed file and thus less bandwidth usage.
+* `limit`
+    Maximum entries that is shown on the feed per page. Default is 50.
+* `page`
+    Number of the page to fetch issues and comments. First page contains the latest updates. Default is 1.
 * `git_host`
     * Hostname of the related git hosting service. The value is determined by `host_type`, but can be overriden by setting this parameter. If not specified, the default values are:
         * If `host_type` is `github`, the default will be set to: `github.com`.

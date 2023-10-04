@@ -3,8 +3,9 @@ from datetime import datetime, timezone, timedelta
 from typing import NamedTuple, List, Dict, Generator, Union, Any, Optional, Tuple
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from itertools import chain
-from urllib.parse import quote, parse_qs, unquote
+from urllib.parse import parse_qs, urlencode
 from xml.dom import minidom
+from functools import partial
 from zlib import crc32
 import orjson
 from uuid import UUID
@@ -64,7 +65,9 @@ def yield_issue_updates(
     since : datetime,
     api_host : str,
     api_issues : str,
-    api_comments : str
+    api_comments : str,
+    page : int = 1,
+    limit : int = 50
 ) -> Generator[Union[CommentData, IssueData], None, Optional[Tuple[int, str]]]:
     """
     Requests issues and comments from "since" datetime 
@@ -76,11 +79,19 @@ def yield_issue_updates(
     )
     issues = client.get(
         api_issues.format(repo), 
-        params = {"since": datetime_to_iso(since)}
+        params = {
+            "since": datetime_to_iso(since),
+            "page": page,
+            ("per_page" if api_host == "api.github.com" else "limit"): limit
+        }
     )
     comments = client.get(
         api_comments.format(repo), 
-        params = {"since": datetime_to_iso(since)}
+        params = {
+            "since": datetime_to_iso(since),
+            "page": page,
+            ("per_page" if api_host == "api.github.com" else "limit"): limit
+        }
     )
     issues_list : List[Dict[str, Union[str, Any]]] = orjson.loads(issues.content)
     comments_list : List[Dict[str, Union[str, Any]]] = orjson.loads(comments.content)
@@ -92,7 +103,10 @@ def yield_issue_updates(
     comments_on_issues : Dict[str, List[CommentData]] = {}
     for c in comments_list:
         issue_number : str = c["issue_url"].split("/")[-1]
-        if (not issue_number) or ("/pulls/" in c["issue_url"]):
+        # Ignore pull requests.
+        if (not issue_number):
+            continue
+        if ("/pulls/" in c["issue_url"]) or ("/pull/" in c["html_url"]):
             continue
         if issue_number not in comments_on_issues:
             comments_on_issues[issue_number] = []
@@ -100,7 +114,7 @@ def yield_issue_updates(
         comments_on_issues[issue_number].append(CommentData(
             uuid = str(uuid_obj),
             link = c["html_url"],
-            title = "Comment on issue #" + issue_number,
+            title = f"Comment on issue #{issue_number}",
             content = c["body"] or "",
             author = c["user"]["login"],
             published = iso_to_datetime(c["created_at"]),
@@ -109,6 +123,9 @@ def yield_issue_updates(
     for i in issues_list:
         issue_number = str(i["number"])
         published = iso_to_datetime(i["created_at"])
+        # Ignore pull requests.
+        if ("/pulls/" in c["html_url"]) or ("/pull/" in c["html_url"]):
+            continue
         # When an issue gets a new comment, the issue becomes
         # "updated". So, this will cause displaying the issue
         # even if it is old. To prevent that, we explicitly check
@@ -126,53 +143,94 @@ def yield_issue_updates(
             updated = iso_to_datetime(i["updated_at"])
         )
         for c in comments_on_issues.get(issue_number, [])[:]:
-            yield c._replace(title = i["title"])
+            yield c._replace(title = "Comment on: " + i["title"])
             comments_on_issues[issue_number].remove(c)
     for v in comments_on_issues.values():
         for c in v:
             yield c
 
+
+def add_element(
+    _root : minidom.Document,
+    _parent : Optional[minidom.Element] = None,
+    _tag : str = "link",
+    _content : Optional[str] = None,
+    /,
+    **kwargs
+):
+    el = _root.createElement(_tag)
+    if _content:
+        el.appendChild(_root.createTextNode(_content))
+    for k, v in kwargs.items():
+        el.setAttribute(k, v)
+    if _parent:
+        _parent.appendChild(el)
+    return el
+
+
 def get_updates_atom(
+    host_url : str,
     repo : str,
     since : datetime,
     api_host : str,
     git_host : str,
     api_issues : str,
     api_comments : str,
+    host_type : str,
     title : Optional[str] = None,
-    pretty : bool = False
+    pretty : bool = False,
+    page : int = 1,
+    limit : int = 50
 ) -> str:
     """
     Create an atom feed with updates.
     """
-    updates_url = "https://{0}/{1}/issues".format(git_host, repo)
     root = minidom.Document()
-    feed = root.createElement("feed")
-    feed.setAttribute("xmlns", "http://www.w3.org/2005/Atom")
-    uuid_obj = UUID(int = crc32(repo.encode()), version = 4)
-    feed_title = root.createElement("title")
-    feed_title.appendChild(root.createTextNode(title or (repo + " issue updates")))
-    feed_id = root.createElement("id")
-    feed_id.appendChild(root.createTextNode("urn:uuid:" + str(uuid_obj)))
-    feed_icon = root.createElement("icon")
-    feed_icon.appendChild(root.createTextNode("https://" + git_host + "/favicon.ico"))
-    feed_link = root.createElement("link")
-    feed_link.setAttribute("rel", "alternate")
-    feed_link.setAttribute("href", updates_url)
-    feed_updated = root.createElement("updated")
-    feed.appendChild(feed_title)
-    feed.appendChild(feed_link)
-    feed.appendChild(feed_icon)
-    feed.appendChild(feed_updated)
-    feed.appendChild(feed_id)
-    root.appendChild(feed)
+    updates_url = "https://{0}/{1}/issues".format(git_host, repo)
+    element = partial(add_element, root)
+    # Create elements
+    feed = element(root, "feed", xmlns = "http://www.w3.org/2005/Atom")
+    element(feed, "title", title or (repo + " issue updates"))
+    element(
+        feed, "subtitle", 
+        "Feed of latest issues and comments for Git repositories."
+    )
+    element(feed, "id", "urn:uuid:" + str(
+        UUID(int = crc32(repo.encode()), version = 4)
+    ))
+    element(feed, "icon", "https://" + git_host + "/favicon.ico")
+    element(feed, "link", rel = "alternate", href = updates_url)
+    element(feed, "generator", "git-issues-rss", uri = "https://github.com/ysfchn/git-issues-rss")
+    constructed = {
+        "repo": repo,
+        "since": datetime_to_iso(since),
+        "host_type": host_type,
+        "api_host": api_host,
+        "git_host": git_host,
+        "api_issues": api_issues,
+        "api_comments": api_comments,
+        "pretty": 1 if pretty else 0,
+        "title": title or (repo + " issue updates"),
+        "page": page,
+        "limit": limit
+    }
+    if page > 1:
+        element(feed, "link", rel = "previous", href = host_url + "?" + urlencode({
+            **constructed, "page": constructed["page"] - 1
+        }))
+    element(feed, "link", rel = "next", href = host_url + "?" + urlencode({
+        **constructed, "page": constructed["page"] + 1
+    }))
+    feed_updated = element(feed, "updated")
     last_update = datetime.fromtimestamp(0, timezone.utc)
     post_generator = yield_issue_updates(
         repo = repo, 
         since = since,
         api_host = api_host,
         api_issues = api_issues,
-        api_comments = api_comments
+        api_comments = api_comments,
+        page = page,
+        limit = limit
     )
     first_post = None
     try:
@@ -184,61 +242,24 @@ def get_updates_atom(
     else:
         first_post = [first_post]
     for post in chain(first_post, post_generator):
-        entry = root.createElement("entry")
-        # Title
-        entry_title = root.createElement("title")
-        entry_title.setAttribute("type", "text")
-        entry_title.appendChild(root.createTextNode(post.title))
-        # Link
-        entry_link = root.createElement("link")
-        entry_link.setAttribute("rel", "alternate")
-        entry_link.setAttribute("href", post.link)
-        # Content
-        entry_content = root.createElement("content")
-        entry_content.setAttribute("type", "text/markdown")
-        entry_content.appendChild(root.createTextNode(post.content))
-        # ID
-        entry_id = root.createElement("id")
-        entry_id.appendChild(root.createTextNode("urn:uuid:" + post.uuid))
-        # Author
-        entry_author = root.createElement("author")
-        entry_author_name = root.createElement("name")
-        entry_author_name.appendChild(root.createTextNode(post.author))
-        entry_author.appendChild(entry_author_name)
-        # Published
-        entry_published = root.createElement("published")
-        entry_published.appendChild(root.createTextNode(
-            post.published.isoformat(timespec = "seconds")
-        ))
-        # Updated
-        entry_updated = root.createElement("updated")
-        entry_updated.appendChild(root.createTextNode(
-            post.updated.isoformat(timespec = "seconds")
-        ))
-        # Category
-        entry_category = root.createElement("category")
-        entry_category.setAttribute("term",
-            "issue" if isinstance(entry, IssueData) else "comment"
-        )
-        # Add all elements
-        entry.appendChild(entry_title)
-        entry.appendChild(entry_link)
-        entry.appendChild(entry_author)
-        entry.appendChild(entry_id)
-        entry.appendChild(entry_category)
-        entry.appendChild(entry_published)
-        entry.appendChild(entry_updated)
-        entry.appendChild(entry_content)
-        feed.appendChild(entry)
+        post_type = "issue" if isinstance(post, IssueData) else "comment"
+        entry = element(feed, "entry")
+        element(entry, "title", post.title, type = "text")
+        element(entry, "link", rel = "alternate", href = post.link)
+        entry_author = element(entry, "author")
+        element(entry_author, "name", post.author)
+        element(entry, "id", "urn:uuid:" + post.uuid)
+        element(entry, "category", term = post_type)
+        element(entry, "published", post.published.isoformat(timespec = "seconds"))
+        element(entry, "updated", post.updated.isoformat(timespec = "seconds"))
+        element(entry, "content", post.content, type = "text/markdown")
         if post.updated > last_update:
             last_update = post.updated
     feed_updated.appendChild(root.createTextNode(
         last_update.isoformat(timespec = "seconds")
     ))
     if pretty:
-        return root.toprettyxml(
-            indent = " " * 4
-        )
+        return root.toprettyxml(indent = " " * 4)
     else:
         return root.toxml()
 
@@ -266,17 +287,24 @@ class handler(BaseHTTPRequestHandler):
         if "api_issues" in params:
             host_type["api_issues"] = params["api_issues"][0]
         if "since" in params:
-            since_time = datetime.fromisoformat(params["since"][0])
+            since_time = iso_to_datetime(params["since"][0])
         try:
             atom = get_updates_atom(
+                host_url = (
+                    ("http://" if ":" in self.headers["Host"] else "https://") +
+                    self.headers["Host"] + self.path.split("?")[0]
+                ),
                 repo = params["repo"][0],
                 since = since_time or (get_datetime_now() - timedelta(days = 2)),
                 title = params.get("title", [None])[0],
+                host_type = params["host_type"][0],
                 api_host = host_type["api_host"],
                 git_host = host_type["git_host"],
                 api_comments = host_type["comments"],
                 api_issues = host_type["issues"],
-                pretty = "pretty" in params
+                pretty = "pretty" in params,
+                page = int(params.get("page", [1])[0]),
+                limit = int(params.get("limit", [50])[0])
             )
             self.send_response(200)
             self.send_header("Content-type", "application/atom+xml")
